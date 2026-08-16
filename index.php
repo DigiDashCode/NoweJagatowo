@@ -157,9 +157,7 @@ function imageUrl($url) {
                 animationFrame = window.requestAnimationFrame(tick);
             }
 
-            firstCard.addEventListener('click', function (event) {
-                event.preventDefault();
-                startBounce();
+            firstCard.addEventListener('click', function () {
             });
 
             window.addEventListener('resize', function () {
