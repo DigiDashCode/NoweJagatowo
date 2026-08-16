@@ -28,4 +28,8 @@ function statusOptions($includeNieaktywne = false) {
     return $opts;
 }
 
+function formatPriceDecimals($value) {
+    return number_format((float)$value, 2, ',', ' ') . ' zł';
+}
+
 ?>

@@ -54,9 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $title = trim($_POST['title'] ?? '');
                 $description = trim($_POST['description'] ?? '');
                 $price = floatval($_POST['price'] ?? 0);
+                $PowierzchniaUzytkowa = str_replace(',', '.', str_replace(' ', '', $_POST['PowierzchniaUżytkowa'] ?? '0'));
+                $PowierzchniaDzialki = str_replace(',', '.', str_replace(' ', '', $_POST['PowierzchniaDziałki'] ?? '0'));
+                $LiczbaPokoi = intval($_POST['LiczbaPokoi'] ?? 0);
+                $CenaOdPowU = str_replace(',', '.', str_replace(' ', '', $_POST['CenaOdPowierzchniUżytkowejBrutto'] ?? '0'));
+                $CenaZaM2 = str_replace(',', '.', str_replace(' ', '', $_POST['CenaZaM2Brutto'] ?? '0'));
                 $location = trim($_POST['location'] ?? '');
-                $bedrooms = intval($_POST['bedrooms'] ?? 0);
-                $bathrooms = intval($_POST['bathrooms'] ?? 0);
                 $area = intval($_POST['area'] ?? 0);
                 $status = trim($_POST['status'] ?? 'Dostępne');
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
@@ -72,8 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $allowed = statusOptions(true);
                         if (!in_array($status, $allowed, true)) $status = 'Dostępne';
 
-                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, bedrooms = ?, bathrooms = ?, area = ?, status = ? WHERE id = ?');
-                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area, $status, $houseId]);
+                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, area = ?, status = ?, PowierzchniaUżytkowa = ?, PowierzchniaDziałki = ?, LiczbaPokoi = ?, CenaOdPowierzchniUżytkowejBrutto = ?, CenaZaM2Brutto = ? WHERE id = ?');
+                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2, $houseId]);
 
                         $stmt = $pdo->prepare('DELETE FROM house_images WHERE house_id = ?');
                         $stmt->execute([$houseId]);
@@ -101,8 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $description = trim($_POST['description'] ?? '');
                 $price = floatval($_POST['price'] ?? 0);
                 $location = trim($_POST['location'] ?? '');
-                $bedrooms = intval($_POST['bedrooms'] ?? 0);
-                $bathrooms = intval($_POST['bathrooms'] ?? 0);
                 $area = intval($_POST['area'] ?? 0);
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
@@ -116,8 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     try {
                         $pdo->beginTransaction();
-                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, bedrooms, bathrooms, area, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area, $status]);
+                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, area, status, PowierzchniaUżytkowa, PowierzchniaDziałki, LiczbaPokoi, CenaOdPowierzchniUżytkowejBrutto, CenaZaM2Brutto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2]);
                         $houseId = $pdo->lastInsertId();
 
                         $stmt = $pdo->prepare('INSERT INTO house_images (house_id, url, is_primary) VALUES (?, ?, ?)');
@@ -147,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
     $editId = intval($_GET['id']);
-    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.bedrooms, h.bathrooms, h.area, h.status, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
+    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.area, h.status, h.PowierzchniaUżytkowa, h.PowierzchniaDziałki, h.LiczbaPokoi, h.CenaOdPowierzchniUżytkowejBrutto, h.CenaZaM2Brutto, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
                            FROM houses h
                            LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
                            WHERE h.id = ?');
@@ -208,7 +209,7 @@ try {
     $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
 
     $stmtSql = "SELECT h.id, h.title, h.location, h.price, h.status, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
-                         FROM houses h
+                             FROM houses h
                          LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
                          $whereSql
                          ORDER BY h.created_at DESC
@@ -302,9 +303,13 @@ function editImages() {
                     </select>
                 </label>
                 <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
-                <label>Sypialnie:<input type="number" name="bedrooms" min="0" value="<?php echo editValue('bedrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę sypialni (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
-                <label>Łazienki:<input type="number" name="bathrooms" min="0" value="<?php echo editValue('bathrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę łazienek (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                <!-- bedrooms and bathrooms removed as requested -->
                 <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawny metraż (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                <label>Pow. użytkowa (m2):<input type="text" name="PowierzchniaUżytkowa" value="<?php echo editValue('PowierzchniaUżytkowa', '0'); ?>"></label>
+                <label>Pow. działki (m2):<input type="text" name="PowierzchniaDziałki" value="<?php echo editValue('PowierzchniaDziałki', '0'); ?>"></label>
+                <label>Liczba pokoi:<input type="number" name="LiczbaPokoi" min="0" value="<?php echo editValue('LiczbaPokoi', '0'); ?>"></label>
+                <label>Cena od pow. użytk. (brutto):<input type="text" name="CenaOdPowierzchniUżytkowejBrutto" value="<?php echo editValue('CenaOdPowierzchniUżytkowejBrutto', '0'); ?>"></label>
+                <label>Cena za m2 (brutto):<input type="text" name="CenaZaM2Brutto" value="<?php echo editValue('CenaZaM2Brutto', '0'); ?>"></label>
                 <label>Główny obraz (URL):<input type="url" name="primary_image_url" value="<?php echo editValue('primary_image_url'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawny adres URL obrazu')" oninput="this.setCustomValidity('')"></label>
                 <label>Dodatkowe obrazy (URL, oddzielone przecinkami):<textarea name="image_urls"><?php echo $editingHouse ? editImages() : old('image_urls'); ?></textarea></label>
                 <button type="submit"><?php echo $editingHouse ? 'Zaktualizuj dom' : 'Dodaj dom'; ?></button>
