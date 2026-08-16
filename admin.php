@@ -58,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $bedrooms = intval($_POST['bedrooms'] ?? 0);
                 $bathrooms = intval($_POST['bathrooms'] ?? 0);
                 $area = intval($_POST['area'] ?? 0);
+                $status = trim($_POST['status'] ?? 'Dostępne');
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
 
@@ -67,8 +68,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     try {
                         $pdo->beginTransaction();
-                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, bedrooms = ?, bathrooms = ?, area = ? WHERE id = ?');
-                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area, $houseId]);
+                        $status = trim($_POST['status'] ?? 'Dostępne');
+                        $allowed = statusOptions(true);
+                        if (!in_array($status, $allowed, true)) $status = 'Dostępne';
+
+                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, bedrooms = ?, bathrooms = ?, area = ?, status = ? WHERE id = ?');
+                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area, $status, $houseId]);
 
                         $stmt = $pdo->prepare('DELETE FROM house_images WHERE house_id = ?');
                         $stmt->execute([$houseId]);
@@ -102,14 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
 
+                $allowed = statusOptions(true);
+                if (!in_array($status, $allowed, true)) $status = 'Dostępne';
+
                 if ($title === '' || $price <= 0 || $location === '' || $primaryImage === '') {
                     $messageType = 'error';
                     $message = 'Wypełnij pola: tytuł, cena, lokalizacja i główny obraz.';
                 } else {
                     try {
                         $pdo->beginTransaction();
-                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, bedrooms, bathrooms, area) VALUES (?, ?, ?, ?, ?, ?, ?)');
-                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area]);
+                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, bedrooms, bathrooms, area, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $stmt->execute([$title, $description, $price, $location, $bedrooms, $bathrooms, $area, $status]);
                         $houseId = $pdo->lastInsertId();
 
                         $stmt = $pdo->prepare('INSERT INTO house_images (house_id, url, is_primary) VALUES (?, ?, ?)');
@@ -139,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
     $editId = intval($_GET['id']);
-    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.bedrooms, h.bathrooms, h.area, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
+    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.bedrooms, h.bathrooms, h.area, h.status, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
                            FROM houses h
                            LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
                            WHERE h.id = ?');
@@ -156,6 +164,7 @@ if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
 // Read optional price filters for admin list
 $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
 $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+$status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
 
 // Treat 0/unset combinations as no filter (same rules as index)
 if ($minPrice === 0 && $maxPrice === 0) {
@@ -182,18 +191,23 @@ try {
         $where[] = 'h.price <= :max_price';
         $params[':max_price'] = $maxPrice;
     }
+    if ($status !== null) {
+        $where[] = 'h.status = :status';
+        $params[':status'] = $status;
+    }
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
     $countSql = 'SELECT COUNT(*) FROM houses h ' . $whereSql;
     $countStmt = $pdo->prepare($countSql);
     foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value, PDO::PARAM_INT);
+        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+        $countStmt->bindValue($key, $value, $type);
     }
     $countStmt->execute();
     $total = (int)$countStmt->fetchColumn();
     $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
 
-    $stmtSql = "SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
+    $stmtSql = "SELECT h.id, h.title, h.location, h.price, h.status, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
                          FROM houses h
                          LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
                          $whereSql
@@ -201,7 +215,8 @@ try {
                          LIMIT :limit OFFSET :offset";
     $stmt = $pdo->prepare($stmtSql);
     foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+        $stmt->bindValue($key, $value, $type);
     }
     $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -238,6 +253,7 @@ function editImages() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel administratora</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -271,6 +287,20 @@ function editImages() {
                 <label>Tytuł:<input type="text" name="title" value="<?php echo editValue('title'); ?>" required oninvalid="this.setCustomValidity('Podaj tytuł')" oninput="this.setCustomValidity('')"></label>
                 <label>Opis:<textarea name="description"><?php echo editValue('description'); ?></textarea></label>
                 <label>Cena:<input type="number" name="price" min="0" step="0.01" value="<?php echo editValue('price'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawną cenę (liczba nieujemna)')" oninput="this.setCustomValidity('')"></label>
+                <label>Status:
+                    <select name="status" required>
+                        <?php foreach (statusOptions(true) as $st):
+                            $sel = '';
+                            if ($editingHouse && isset($editingHouse['status']) && $editingHouse['status'] === $st) {
+                                $sel = 'selected';
+                            } elseif (!$editingHouse && $st === 'Dostępne') {
+                                $sel = 'selected';
+                            }
+                        ?>
+                            <option value="<?php echo htmlspecialchars($st); ?>" <?php echo $sel; ?>><?php echo htmlspecialchars($st); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
                 <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
                 <label>Sypialnie:<input type="number" name="bedrooms" min="0" value="<?php echo editValue('bedrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę sypialni (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
                 <label>Łazienki:<input type="number" name="bathrooms" min="0" value="<?php echo editValue('bathrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę łazienek (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>

@@ -332,6 +332,48 @@ button:hover {
     padding: 8px 10px;
     border-radius: 8px;
 }
+
+/* wider layout on very large monitors */
+@media (min-width: 1400px) {
+    .filter-panel,
+    .admin-form,
+    #results,
+    .detail-page,
+    .contact-page {
+        max-width: 2000px;
+    }
+}
+
+/* increase card image height on large screens */
+@media (min-width: 1600px) {
+    .card img {
+        height: 320px;
+    }
+}
+
+/* On very large monitors expand the main containers to use more viewport space
+   so tiles become wider (approx 70% of viewport). */
+@media (min-width: 1600px) {
+    .filter-panel,
+    .admin-form,
+    #results,
+    .detail-page,
+    .contact-page {
+        max-width: 70vw;
+    }
+}
+
+/* Slightly increase tile image height on ultra-wide screens */
+@media (min-width: 2200px) {
+    .card img {
+        height: 380px;
+    }
+}
+
+/* ensure Bootstrap overrides play nicely */
+.form-control {
+    border-radius: 10px;
+}
 .contact-card h2 {
     margin-top: 0;
 }
@@ -389,4 +431,43 @@ button:hover {
     border: 1px solid #88cc88;
     padding: 12px;
     margin-bottom: 20px;
+}
+
+/* status badges */
+.status-badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+.status-sprzedane { background: #f8d7da; color: #a03a2b; }
+.status-rezerwacja { background: #fff3cd; color: #856404; }
+.status-dostepne { background: #e6f4ea; color: #225522; }
+.status-nieaktywne { background: #e9ecef; color: #000000; }
+.status-default { background: #f0f0f0; color: #333; }
+
+/* admin action variants inside tiles */
+.card-admin-actions .admin-action-button {
+    border: none;
+    color: #fff;
+    padding: 6px 8px;
+}
+.card-admin-actions .admin-edit {
+    background: #f0ad4e; /* yellow */
+}
+.card-admin-actions .admin-delete {
+    background: var(--danger);
+}
+.card-admin-actions .admin-action-button:hover {
+    opacity: 0.9;
+}
+
+/* ensure admin page containers are widened like index */
+@media (min-width: 1600px) {
+    .admin-form, .admin-list {
+        max-width: 70vw;
+        margin-left: auto;
+        margin-right: auto;
+    }
 }

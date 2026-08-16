@@ -4,6 +4,7 @@ require_once __DIR__ . '/helpers.php';
 
 $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
 $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+$status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
 
 // If the user explicitly sets both min and max to 0, treat it as no filter selected
 if ($minPrice === 0 && $maxPrice === 0) {
@@ -29,6 +30,14 @@ if ($maxPrice !== null) {
     $params[':max_price'] = $maxPrice;
 }
 
+// Exclude inactive from public listing unless explicitly requested (public doesn't offer Nieaktywne)
+$where[] = "h.status != 'Nieaktywne'";
+
+if ($status !== null) {
+    $where[] = 'h.status = :status';
+    $params[':status'] = $status;
+}
+
 $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 // Pagination
@@ -40,13 +49,14 @@ try {
     $countSql = "SELECT COUNT(*) FROM houses h $whereSql";
     $countStmt = $pdo->prepare($countSql);
     foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value, PDO::PARAM_INT);
+        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+        $countStmt->bindValue($key, $value, $type);
     }
     $countStmt->execute();
     $total = (int)$countStmt->fetchColumn();
     $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
 
-    $sql = "SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, '') AS image_url
+    $sql = "SELECT h.id, h.title, h.location, h.price, h.status, COALESCE(hi.url, '') AS image_url
             FROM houses h
             LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
             $whereSql
@@ -54,7 +64,8 @@ try {
             LIMIT :limit OFFSET :offset";
     $stmt = $pdo->prepare($sql);
     foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+        $stmt->bindValue($key, $value, $type);
     }
     $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -71,6 +82,7 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Domy</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS houses (
     bedrooms INT UNSIGNED NOT NULL DEFAULT 0,
     bathrooms INT UNSIGNED NOT NULL DEFAULT 0,
     area INT UNSIGNED NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT 'Dostępne',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -38,6 +39,10 @@ VALUES
 ('Nowoczesny dom nad jeziorem', 'Duży dom z panoramicznym widokiem na jezioro i prywatnym dostępem do plaży.', 2050000, 'Mazury', 4, 3, 265),
 ('Mały dom gospodarczy', 'Ekonomiczny dom, idealny na pierwszy zakup lub jako inwestycja pod wynajem.', 560000, 'Białystok', 2, 1, 95),
 ('Dom z ogrodem', 'Rodzinny dom w spokojnej okolicy z dużym ogrodem i miejscem na letni grill.', 1180000, 'Gdańsk', 4, 2, 210);
+
+-- If you are applying this to an existing DB, add the status column and set default values:
+-- ALTER TABLE houses ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'Dostępne';
+-- UPDATE houses SET status = 'Dostępne' WHERE status IS NULL;
 
 INSERT INTO house_images (house_id, url, is_primary)
 VALUES
