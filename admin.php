@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
 session_start();
 $message = '';
 $messageType = 'success';
@@ -44,8 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $message = 'Dom został usunięty.';
                 } catch (Exception $e) {
                     $pdo->rollBack();
+                    error_log('admin.php delete error: ' . $e->getMessage());
                     $messageType = 'error';
-                    $message = 'Błąd podczas usuwania domu: ' . $e->getMessage();
+                    $message = 'Błąd podczas usuwania domu.';
                 }
             } elseif ($action === 'update' && isset($_POST['house_id'])) {
                 $houseId = intval($_POST['house_id']);
@@ -84,8 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message = 'Dom został zaktualizowany.';
                     } catch (Exception $e) {
                         $pdo->rollBack();
+                        error_log('admin.php update error: ' . $e->getMessage());
                         $messageType = 'error';
-                        $message = 'Błąd podczas aktualizacji domu: ' . $e->getMessage();
+                        $message = 'Błąd podczas aktualizacji domu.';
                     }
                 }
             } else {
@@ -124,8 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_POST = [];
                     } catch (Exception $e) {
                         $pdo->rollBack();
+                        error_log('admin.php insert error: ' . $e->getMessage());
                         $messageType = 'error';
-                        $message = 'Błąd bazy danych: ' . $e->getMessage();
+                        $message = 'Wystąpił błąd bazy danych.';
                     }
                 }
             }
@@ -149,18 +153,65 @@ if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
     }
 }
 
+// Read optional price filters for admin list
+$minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
+$maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+
+// Treat 0/unset combinations as no filter (same rules as index)
+if ($minPrice === 0 && $maxPrice === 0) {
+    $minPrice = null;
+    $maxPrice = null;
+}
+if ($minPrice === null && $maxPrice === 0) {
+    $maxPrice = null;
+}
+
+// Paginated fetch for admin list with optional filters
 $houses = [];
+$perPage = 20;
+$currentPage = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$offset = ($currentPage - 1) * $perPage;
 try {
-    $stmt = $pdo->query("SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
+    $where = [];
+    $params = [];
+    if ($minPrice !== null) {
+        $where[] = 'h.price >= :min_price';
+        $params[':min_price'] = $minPrice;
+    }
+    if ($maxPrice !== null) {
+        $where[] = 'h.price <= :max_price';
+        $params[':max_price'] = $maxPrice;
+    }
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+    $countSql = 'SELECT COUNT(*) FROM houses h ' . $whereSql;
+    $countStmt = $pdo->prepare($countSql);
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
+    $countStmt->execute();
+    $total = (int)$countStmt->fetchColumn();
+    $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
+
+    $stmtSql = "SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
                          FROM houses h
                          LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
+                         $whereSql
                          ORDER BY h.created_at DESC
-                         LIMIT 20");
+                         LIMIT :limit OFFSET :offset";
+    $stmt = $pdo->prepare($stmtSql);
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
+    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->execute();
     $houses = $stmt->fetchAll();
 } catch (Exception $e) {
     if (!$message) {
+        error_log('admin.php fetch houses error: ' . $e->getMessage());
         $messageType = 'error';
-        $message = 'Nie można pobrać listy domów: ' . $e->getMessage();
+        $message = 'Nie można pobrać listy domów.';
     }
 }
 
@@ -208,7 +259,7 @@ function editImages() {
         <?php if (!is_admin_authenticated()): ?>
             <form method="post">
                 <input type="hidden" name="action" value="login">
-                <label>Hasło administratora:<input type="password" name="admin_password" required></label>
+                <label>Hasło administratora:<input type="password" name="admin_password" required oninvalid="this.setCustomValidity('Podaj hasło administratora')" oninput="this.setCustomValidity('')"></label>
                 <button type="submit">Zaloguj</button>
             </form>
         <?php else: ?>
@@ -217,14 +268,14 @@ function editImages() {
                 <?php if ($editingHouse): ?>
                     <input type="hidden" name="house_id" value="<?php echo $editingHouse['id']; ?>">
                 <?php endif; ?>
-                <label>Tytuł:<input type="text" name="title" value="<?php echo editValue('title'); ?>" required></label>
+                <label>Tytuł:<input type="text" name="title" value="<?php echo editValue('title'); ?>" required oninvalid="this.setCustomValidity('Podaj tytuł')" oninput="this.setCustomValidity('')"></label>
                 <label>Opis:<textarea name="description"><?php echo editValue('description'); ?></textarea></label>
-                <label>Cena:<input type="number" name="price" min="0" step="0.01" value="<?php echo editValue('price'); ?>" required></label>
-                <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required></label>
-                <label>Sypialnie:<input type="number" name="bedrooms" min="0" value="<?php echo editValue('bedrooms', '0'); ?>"></label>
-                <label>Łazienki:<input type="number" name="bathrooms" min="0" value="<?php echo editValue('bathrooms', '0'); ?>"></label>
-                <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>"></label>
-                <label>Główny obraz (URL):<input type="url" name="primary_image_url" value="<?php echo editValue('primary_image_url'); ?>" required></label>
+                <label>Cena:<input type="number" name="price" min="0" step="0.01" value="<?php echo editValue('price'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawną cenę (liczba nieujemna)')" oninput="this.setCustomValidity('')"></label>
+                <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
+                <label>Sypialnie:<input type="number" name="bedrooms" min="0" value="<?php echo editValue('bedrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę sypialni (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                <label>Łazienki:<input type="number" name="bathrooms" min="0" value="<?php echo editValue('bathrooms', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawną liczbę łazienek (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawny metraż (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                <label>Główny obraz (URL):<input type="url" name="primary_image_url" value="<?php echo editValue('primary_image_url'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawny adres URL obrazu')" oninput="this.setCustomValidity('')"></label>
                 <label>Dodatkowe obrazy (URL, oddzielone przecinkami):<textarea name="image_urls"><?php echo $editingHouse ? editImages() : old('image_urls'); ?></textarea></label>
                 <button type="submit"><?php echo $editingHouse ? 'Zaktualizuj dom' : 'Dodaj dom'; ?></button>
                 <?php if ($editingHouse): ?>
@@ -232,33 +283,17 @@ function editImages() {
                 <?php endif; ?>
             </form>
 
-            <section class="admin-list">
-                <h2>Najświeższe domy</h2>
-                <?php if (empty($houses)): ?>
-                    <p>Brak dostępnych domów.</p>
-                <?php else: ?>
-                    <div class="admin-grid">
-                        <?php foreach ($houses as $house): ?>
-                            <div class="admin-card">
-                                <img src="<?php echo htmlspecialchars($house['image_url'], ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($house['title'], ENT_QUOTES, 'UTF-8'); ?>">
-                                <div class="admin-card-body">
-                                    <h3><?php echo htmlspecialchars($house['title'], ENT_QUOTES, 'UTF-8'); ?></h3>
-                                    <p><?php echo htmlspecialchars($house['location'], ENT_QUOTES, 'UTF-8'); ?></p>
-                                    <p class="price"><?php echo number_format($house['price'], 0, ',', ' ') . ' zł'; ?></p>
-                                    <div class="admin-actions">
-                                        <a class="admin-action-link" href="admin.php?action=edit&id=<?php echo $house['id']; ?>">Edytuj</a>
-                                        <form class="admin-delete-form" method="post">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="delete_house_id" value="<?php echo $house['id']; ?>">
-                                            <button type="submit" class="admin-action-button">Usuń</button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </section>
+            <?php
+                // Render the shared houses component for admin (show filters)
+                $showFilter = true;
+                $admin = true;
+                $minPrice = $minPrice ?? null;
+                $maxPrice = $maxPrice ?? null;
+                $currentPage = $currentPage ?? 1;
+                $totalPages = $totalPages ?? 1;
+                $baseUrl = 'admin.php';
+                include __DIR__ . '/houses_component.php';
+            ?>
         <?php endif; ?>
     </main>
 

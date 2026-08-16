@@ -1,8 +1,21 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
 
 $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
 $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+
+// If the user explicitly sets both min and max to 0, treat it as no filter selected
+if ($minPrice === 0 && $maxPrice === 0) {
+    $minPrice = null;
+    $maxPrice = null;
+}
+
+// If min is not set (null) but max is explicitly 0, treat as no filter selected
+if ($minPrice === null && $maxPrice === 0) {
+    $maxPrice = null;
+}
+
 $where = [];
 $params = [];
 
@@ -17,24 +30,39 @@ if ($maxPrice !== null) {
 }
 
 $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-$sql = "SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, '') AS image_url
-        FROM houses h
-        LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
-        $whereSql
-        ORDER BY h.created_at DESC";
-$stmt = $pdo->prepare($sql);
-foreach ($params as $key => $value) {
-    $stmt->bindValue($key, $value, PDO::PARAM_INT);
-}
-$stmt->execute();
-$houses = $stmt->fetchAll();
 
-function formatPrice($value) {
-    return number_format($value, 0, ',', ' ') . ' zł';
-}
+// Pagination
+$perPage = 20;
+$currentPage = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$offset = ($currentPage - 1) * $perPage;
 
-function imageUrl($url) {
-    return $url ?: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80';
+try {
+    $countSql = "SELECT COUNT(*) FROM houses h $whereSql";
+    $countStmt = $pdo->prepare($countSql);
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
+    $countStmt->execute();
+    $total = (int)$countStmt->fetchColumn();
+    $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
+
+    $sql = "SELECT h.id, h.title, h.location, h.price, COALESCE(hi.url, '') AS image_url
+            FROM houses h
+            LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
+            $whereSql
+            ORDER BY h.created_at DESC
+            LIMIT :limit OFFSET :offset";
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
+    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $houses = $stmt->fetchAll();
+} catch (Exception $e) {
+    $houses = [];
+    $totalPages = 1;
 }
 ?>
 <!DOCTYPE html>
@@ -56,38 +84,15 @@ function imageUrl($url) {
 
     <?php include __DIR__ . '/carousel.php'; ?>
 
-    <section class="filter-panel">
-        <h2>Filtr cen</h2>
-        <form method="get">
-            <div class="filter-row">
-                <label>Min cena:<input type="number" name="min_price" min="0" step="1000" placeholder="0" value="<?php echo htmlspecialchars($minPrice ?? ''); ?>"></label>
-                <label>Max cena:<input type="number" name="max_price" min="0" step="1000" placeholder="0" value="<?php echo htmlspecialchars($maxPrice ?? ''); ?>"></label>
-                <button type="submit">Pokaż</button>
-            </div>
-        </form>
-    </section>
-
-    <section id="results">
-        <div class="grid">
-            <?php if (empty($houses)): ?>
-                <p>Brak domów w podanym przedziale cenowym.</p>
-            <?php else: ?>
-                <?php foreach ($houses as $index => $house): ?>
-                    <?php $isFirstHouse = $index === 0; ?>
-                    <a class="card<?php echo $isFirstHouse ? ' house-card-bouncy' : ''; ?>"
-                       href="detail.php?id=<?php echo $house['id']; ?>"
-                       <?php echo $isFirstHouse ? 'data-bouncy-card="true"' : ''; ?>>
-                        <img src="<?php echo htmlspecialchars(imageUrl($house['image_url']), ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($house['title'], ENT_QUOTES, 'UTF-8'); ?>">
-                        <div class="card-content">
-                            <h3><?php echo htmlspecialchars($house['title'], ENT_QUOTES, 'UTF-8'); ?></h3>
-                            <p class="price"><?php echo formatPrice($house['price']); ?></p>
-                            <p class="location"><?php echo htmlspecialchars($house['location'], ENT_QUOTES, 'UTF-8'); ?></p>
-                        </div>
-                    </a>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-    </section>
+    <?php
+    // Render filter, tiles and pagination via reusable component
+    $showFilter = true;
+    $admin = false;
+    $currentPage = $currentPage ?? 1;
+    $totalPages = $totalPages ?? 1;
+    $baseUrl = 'index.php';
+    include __DIR__ . '/houses_component.php';
+    ?>
     <script src="carousel.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {

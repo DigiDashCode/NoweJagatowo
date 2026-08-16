@@ -21,4 +21,4 @@ try {
 }
 
 // Simple admin password for the minimal scaffold. Change this before production.
-define('ADMIN_PASSWORD', 'changeme123');
+define('ADMIN_PASSWORD', 'NoweJagatowo');

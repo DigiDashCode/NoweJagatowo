@@ -311,6 +311,27 @@ button:hover {
 .admin-action-button:hover {
     background: #7c2e24;
 }
+/* card-item wraps the clickable card and optional admin actions */
+.card-item {
+    position: relative;
+}
+.card-admin-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.card-admin-actions .admin-action-link {
+    background: rgba(255,255,255,0.9);
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+.card-admin-actions .admin-delete-form button.admin-action-button {
+    padding: 8px 10px;
+    border-radius: 8px;
+}
 .contact-card h2 {
     margin-top: 0;
 }

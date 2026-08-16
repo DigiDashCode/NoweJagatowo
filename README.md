@@ -6,7 +6,9 @@
 3. Clone repository to XAMP-folder /htdocs/NoweJagatowo
 https://github.com/DigiDashCode/NoweJagatowo.git
 
-4. Setup database: in XAMPP dashboard click admin next to MySQL. Click "Import" select setup.sql file in /htdocs/NoweJagatowo
+4. Setup database: in XAMPP dashboard click admin next to MySQL. 
+- If first time setup: click on SQL paste this script and press GO: `CREATE DATABASE house_sale CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+- Click "Import" select setup.sql file in /htdocs/NoweJagatowo
 
 5. To open website type in browser localhost/NoweJagatowo/
 
