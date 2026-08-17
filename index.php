@@ -89,6 +89,7 @@ try {
     <header>
         <div class="top-menu">
             <a class="menu-item active" href="index.php">Domy</a>
+            <a class="menu-item" href="domy-na-mapie.php">Domy na Mapie</a>
             <a class="menu-item" href="kontakt.php">Kontakt</a>
         </div>
         

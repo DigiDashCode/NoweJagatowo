@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS houses (
     CenaOdPowierzchniUżytkowejBrutto DECIMAL(14,2) NOT NULL DEFAULT 0.00,
     CenaZaM2Brutto DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     status VARCHAR(32) NOT NULL DEFAULT 'Dostępne',
+    latitude DECIMAL(10,8) NULL,
+    longitude DECIMAL(11,8) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -84,6 +86,8 @@ VALUES
 -- If you are applying this to an existing DB, add the status column and set default values:
 -- ALTER TABLE houses ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'Dostępne';
 -- UPDATE houses SET status = 'Dostępne' WHERE status IS NULL;
+-- ALTER TABLE houses ADD COLUMN latitude DECIMAL(10,8) NULL;
+-- ALTER TABLE houses ADD COLUMN longitude DECIMAL(11,8) NULL;
 
 -- Insert house images using house title lookup to ensure correct house_id
 INSERT INTO house_images (house_id, url, is_primary)

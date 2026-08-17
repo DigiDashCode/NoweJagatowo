@@ -1,6 +1,10 @@
 <?php
+require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+
+$googleMapsApiKey = defined('GOOGLE_MAPS_API_KEY') ? GOOGLE_MAPS_API_KEY : '';
+
 session_start();
 $message = '';
 $messageType = 'success';
@@ -62,6 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $location = trim($_POST['location'] ?? '');
                 $area = intval($_POST['area'] ?? 0);
                 $status = trim($_POST['status'] ?? 'Dostępne');
+                $latitude = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? (float)$_POST['latitude'] : null;
+                $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? (float)$_POST['longitude'] : null;
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
 
@@ -75,8 +81,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $allowed = statusOptions(true);
                         if (!in_array($status, $allowed, true)) $status = 'Dostępne';
 
-                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, area = ?, status = ?, PowierzchniaUżytkowa = ?, PowierzchniaDziałki = ?, LiczbaPokoi = ?, CenaOdPowierzchniUżytkowejBrutto = ?, CenaZaM2Brutto = ? WHERE id = ?');
-                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2, $houseId]);
+                        $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, area = ?, status = ?, PowierzchniaUżytkowa = ?, PowierzchniaDziałki = ?, LiczbaPokoi = ?, CenaOdPowierzchniUżytkowejBrutto = ?, CenaZaM2Brutto = ?, latitude = ?, longitude = ? WHERE id = ?');
+                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2, $latitude, $longitude, $houseId]);
 
                         $stmt = $pdo->prepare('DELETE FROM house_images WHERE house_id = ?');
                         $stmt->execute([$houseId]);
@@ -105,6 +111,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $price = floatval($_POST['price'] ?? 0);
                 $location = trim($_POST['location'] ?? '');
                 $area = intval($_POST['area'] ?? 0);
+                $status = trim($_POST['status'] ?? 'Dostępne');
+                $latitude = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? (float)$_POST['latitude'] : null;
+                $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? (float)$_POST['longitude'] : null;
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
 
@@ -117,8 +126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     try {
                         $pdo->beginTransaction();
-                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, area, status, PowierzchniaUżytkowa, PowierzchniaDziałki, LiczbaPokoi, CenaOdPowierzchniUżytkowejBrutto, CenaZaM2Brutto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2]);
+                        $stmt = $pdo->prepare('INSERT INTO houses (title, description, price, location, area, status, PowierzchniaUżytkowa, PowierzchniaDziałki, LiczbaPokoi, CenaOdPowierzchniUżytkowejBrutto, CenaZaM2Brutto, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2, $latitude, $longitude]);
                         $houseId = $pdo->lastInsertId();
 
                         $stmt = $pdo->prepare('INSERT INTO house_images (house_id, url, is_primary) VALUES (?, ?, ?)');
@@ -148,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
     $editId = intval($_GET['id']);
-    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.area, h.status, h.PowierzchniaUżytkowa, h.PowierzchniaDziałki, h.LiczbaPokoi, h.CenaOdPowierzchniUżytkowejBrutto, h.CenaZaM2Brutto, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
+    $stmt = $pdo->prepare('SELECT h.id, h.title, h.description, h.price, h.location, h.area, h.status, h.latitude, h.longitude, h.PowierzchniaUżytkowa, h.PowierzchniaDziałki, h.LiczbaPokoi, h.CenaOdPowierzchniUżytkowejBrutto, h.CenaZaM2Brutto, COALESCE(hi.url, \'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80\') AS primary_image_url
                            FROM houses h
                            LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
                            WHERE h.id = ?');
@@ -261,6 +270,7 @@ function editImages() {
     <header>
         <div class="top-menu">
             <a class="menu-item" href="index.php">Domy</a>
+            <a class="menu-item" href="domy-na-mapie.php">Domy na Mapie</a>
             <a class="menu-item" href="kontakt.php">Kontakt</a>
         </div>
         
@@ -303,6 +313,16 @@ function editImages() {
                     </select>
                 </label>
                 <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
+                <label>Szerokość geograficzna (latitude):<input type="number" name="latitude" step="any" value="<?php echo editValue('latitude', ''); ?>" placeholder="np. 54.352025"></label>
+                <label>Długość geograficzna (longitude):<input type="number" name="longitude" step="any" value="<?php echo editValue('longitude', ''); ?>" placeholder="np. 18.646638"></label>
+
+                <div class="map-editor">
+                    <div class="map-editor-header">
+                        <strong>Wskaż lokalizację na mapie</strong>
+                    </div>
+                    <div id="adminMap" class="map-editor-map" aria-label="Mapa do ustawiania współrzędnych"></div>
+                    <p class="map-editor-note">Kliknij na mapie, aby ustawić współrzędne albo wpisz je ręcznie powyżej. Wystarczy podać poprawny klucz Google Maps API w skrypcie.</p>
+                </div>
                 <!-- bedrooms and bathrooms removed as requested -->
                 <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawny metraż (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
                 <label>Pow. użytkowa (m2):<input type="text" name="PowierzchniaUżytkowa" value="<?php echo editValue('PowierzchniaUżytkowa', '0'); ?>"></label>
@@ -340,5 +360,137 @@ function editImages() {
         setTimeout(function(){ location.reload(); }, <?php echo $ms; ?>);
     </script>
     <?php endif; ?>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const latInput = document.querySelector('input[name="latitude"]');
+            const lngInput = document.querySelector('input[name="longitude"]');
+            const mapElement = document.getElementById('adminMap');
+
+            if (!latInput || !lngInput || !mapElement) {
+                return;
+            }
+
+            const GOOGLE_MAPS_API_KEY = <?php echo json_encode($googleMapsApiKey, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+            const GOOGLE_MAPS_KEY_IS_PLACEHOLDER = !GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('YOUR_GOOGLE_MAPS_API_KEY') || GOOGLE_MAPS_API_KEY.includes('YOUR_GOOGLE_MAPS_API_KEY');
+
+            function showMapFallback(message) {
+                mapElement.innerHTML = '<div class="map-editor-fallback">' + message + '</div>';
+            }
+
+            function readCoordinates() {
+                const lat = parseFloat(latInput.value);
+                const lng = parseFloat(lngInput.value);
+
+                if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    return { lat, lng };
+                }
+
+                return { lat: 52.2297, lng: 21.0122 };
+            }
+
+            function normalizeLatLng(position) {
+                if (!position) {
+                    return null;
+                }
+
+                if (typeof position.lat === 'function' && typeof position.lng === 'function') {
+                    return { lat: position.lat(), lng: position.lng() };
+                }
+
+                if (Number.isFinite(position.lat) && Number.isFinite(position.lng)) {
+                    return { lat: position.lat, lng: position.lng };
+                }
+
+                return null;
+            }
+
+            function updateInputsFromMarker(position) {
+                const normalized = normalizeLatLng(position);
+                if (!normalized) {
+                    return;
+                }
+
+                latInput.value = Number(normalized.lat).toFixed(8);
+                lngInput.value = Number(normalized.lng).toFixed(8);
+            }
+
+            function refreshMapMarker(map, marker, position) {
+                if (!marker) {
+                    return;
+                }
+
+                const normalized = normalizeLatLng(position);
+                if (!normalized) {
+                    return;
+                }
+
+                marker.setPosition(normalized);
+                map.panTo(normalized);
+            }
+
+            function initAdminMap() {
+                if (typeof google === 'undefined' || !google.maps) {
+                    showMapFallback('Google Maps API nie jest dostępne. Ustaw poprawny klucz API w pliku admin.php.');
+                    return;
+                }
+
+                const center = readCoordinates();
+                const map = new google.maps.Map(mapElement, {
+                    center: center,
+                    zoom: 10,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: true,
+                    zoomControl: true
+                });
+
+                let marker = new google.maps.Marker({
+                    map: map,
+                    position: center,
+                    draggable: true,
+                    title: 'Położenie nieruchomości'
+                });
+
+                marker.addListener('dragend', function (event) {
+                    updateInputsFromMarker(event.latLng);
+                });
+
+                map.addListener('click', function (event) {
+                    const position = event.latLng;
+                    refreshMapMarker(map, marker, position);
+                    updateInputsFromMarker(position);
+                });
+
+                function syncFromInputs() {
+                    const value = readCoordinates();
+                    if (value.lat === 52.2297 && value.lng === 21.0122) {
+                        return;
+                    }
+                    refreshMapMarker(map, marker, value);
+                }
+
+                latInput.addEventListener('input', syncFromInputs);
+                lngInput.addEventListener('input', syncFromInputs);
+            }
+
+            if (GOOGLE_MAPS_KEY_IS_PLACEHOLDER) {
+                showMapFallback('Dodaj realny klucz Google Maps API w admin.php, aby aktywować mapę do kliknięcia.');
+                return;
+            }
+
+            if (typeof google !== 'undefined' && google.maps) {
+                initAdminMap();
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(GOOGLE_MAPS_API_KEY) + '&callback=adminMapEditorCallback';
+            script.async = true;
+            script.defer = true;
+            window.adminMapEditorCallback = initAdminMap;
+            document.head.appendChild(script);
+        });
+    </script>
 </body>
 </html>

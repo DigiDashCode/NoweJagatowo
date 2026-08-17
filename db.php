@@ -1,10 +1,11 @@
 <?php
-// Database connection settings - update with your MySQL credentials
-$host = '127.0.0.1';
-$db   = 'house_sale';
-$user = 'root';
-$pass = '';
-$charset = 'utf8mb4';
+require_once __DIR__ . '/config.php';
+
+$host = DB_HOST;
+$db   = DB_NAME;
+$user = DB_USER;
+$pass = DB_PASS;
+$charset = DB_CHARSET;
 
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -19,6 +20,3 @@ try {
     echo 'Database connection failed: ' . htmlspecialchars($e->getMessage());
     exit;
 }
-
-// Simple admin password for the minimal scaffold. Change this before production.
-define('ADMIN_PASSWORD', 'NoweJagatowo');
