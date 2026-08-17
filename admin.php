@@ -21,6 +21,78 @@ function is_admin_authenticated() {
     return isset($_SESSION['admin_authenticated']) && $_SESSION['admin_authenticated'] === true && time() < ($_SESSION['admin_expires'] ?? 0);
 }
 
+if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
+    $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+    $status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
+
+    if ($minPrice === 0 && $maxPrice === 0) {
+        $minPrice = null;
+        $maxPrice = null;
+    }
+    if ($minPrice === null && $maxPrice === 0) {
+        $maxPrice = null;
+    }
+
+    $houses = [];
+    $perPage = 20;
+    $currentPage = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $offset = ($currentPage - 1) * $perPage;
+
+    try {
+        $where = [];
+        $params = [];
+        if ($minPrice !== null) {
+            $where[] = 'h.price >= :min_price';
+            $params[':min_price'] = $minPrice;
+        }
+        if ($maxPrice !== null) {
+            $where[] = 'h.price <= :max_price';
+            $params[':max_price'] = $maxPrice;
+        }
+        if ($status !== null) {
+            $where[] = 'h.status = :status';
+            $params[':status'] = $status;
+        }
+        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $countSql = 'SELECT COUNT(*) FROM houses h ' . $whereSql;
+        $countStmt = $pdo->prepare($countSql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $countStmt->bindValue($key, $value, $type);
+        }
+        $countStmt->execute();
+        $total = (int)$countStmt->fetchColumn();
+        $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
+
+        $stmtSql = "SELECT h.id, h.title, h.location, h.price, h.status, COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
+                     FROM houses h
+                     LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
+                     $whereSql
+                     ORDER BY h.created_at DESC
+                     LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($stmtSql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($key, $value, $type);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $houses = $stmt->fetchAll();
+    } catch (Exception $e) {
+        $houses = [];
+        $totalPages = 1;
+    }
+
+    $showFilter = true;
+    $admin = true;
+    $baseUrl = 'admin.php';
+    include __DIR__ . '/houses_component.php';
+    exit;
+}
+
 function normalizeImagePathFromUrl($url) {
     if ($url === '') {
         return '';
@@ -468,7 +540,8 @@ function editImages() {
                 </div>
             </div>
 
-            <?php
+            <div id="listing-root">
+                <?php
                 // Render the shared houses component for admin (show filters)
                 $showFilter = true;
                 $admin = true;
@@ -478,7 +551,8 @@ function editImages() {
                 $totalPages = $totalPages ?? 1;
                 $baseUrl = 'admin.php';
                 include __DIR__ . '/houses_component.php';
-            ?>
+                ?>
+            </div>
         <?php endif; ?>
     </main>
 
@@ -492,7 +566,61 @@ function editImages() {
     <?php endif; ?>
 
     <script>
+        function bindListingAjax() {
+            const root = document.getElementById('listing-root');
+            if (!root) {
+                return;
+            }
+
+            const form = root.querySelector('.filter-panel form');
+            if (form) {
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    const params = new URLSearchParams(new FormData(form));
+                    params.set('ajax', '1');
+                    const requestUrl = new URL(window.location.href);
+                    requestUrl.search = params.toString();
+                    fetch(requestUrl.toString(), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(function (response) { return response.text(); })
+                    .then(function (html) {
+                        root.innerHTML = html;
+                        bindListingAjax();
+                    })
+                    .catch(function () {
+                        window.location.href = form.action + '?' + params.toString();
+                    });
+                });
+            }
+
+            root.querySelectorAll('.page-link').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const requestUrl = new URL(link.href);
+                    requestUrl.searchParams.set('ajax', '1');
+                    fetch(requestUrl.toString(), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(function (response) { return response.text(); })
+                    .then(function (html) {
+                        root.innerHTML = html;
+                        bindListingAjax();
+                    })
+                    .catch(function () {
+                        window.location.href = link.href;
+                    });
+                });
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
+            bindListingAjax();
+
             const editorTile = document.querySelector('[data-admin-editor-tile]');
             const editorToggleButton = document.querySelector('[data-admin-toggle]');
 

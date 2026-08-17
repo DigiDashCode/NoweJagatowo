@@ -2,6 +2,83 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 
+if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
+    $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+    $status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
+
+    if ($minPrice === 0 && $maxPrice === 0) {
+        $minPrice = null;
+        $maxPrice = null;
+    }
+
+    if ($minPrice === null && $maxPrice === 0) {
+        $maxPrice = null;
+    }
+
+    $where = [];
+    $params = [];
+
+    if ($minPrice !== null) {
+        $where[] = 'h.price >= :min_price';
+        $params[':min_price'] = $minPrice;
+    }
+
+    if ($maxPrice !== null) {
+        $where[] = 'h.price <= :max_price';
+        $params[':max_price'] = $maxPrice;
+    }
+
+    $where[] = "h.status != 'Nieaktywne'";
+
+    if ($status !== null) {
+        $where[] = 'h.status = :status';
+        $params[':status'] = $status;
+    }
+
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $perPage = 20;
+    $currentPage = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $offset = ($currentPage - 1) * $perPage;
+
+    try {
+        $countSql = "SELECT COUNT(*) FROM houses h $whereSql";
+        $countStmt = $pdo->prepare($countSql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $countStmt->bindValue($key, $value, $type);
+        }
+        $countStmt->execute();
+        $total = (int)$countStmt->fetchColumn();
+        $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
+
+        $sql = "SELECT h.id, h.title, h.location, h.price, h.status, COALESCE(hi.url, '') AS image_url
+                FROM houses h
+                LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
+                $whereSql
+                ORDER BY h.created_at DESC
+                LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($key, $value, $type);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $houses = $stmt->fetchAll();
+    } catch (Exception $e) {
+        $houses = [];
+        $totalPages = 1;
+    }
+
+    $showFilter = true;
+    $admin = false;
+    $baseUrl = 'index.php';
+    include __DIR__ . '/houses_component.php';
+    exit;
+}
+
 $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
 $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
 $status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
@@ -97,99 +174,73 @@ try {
 
     <?php include __DIR__ . '/carousel.php'; ?>
 
-    <?php
-    // Render filter, tiles and pagination via reusable component
-    $showFilter = true;
-    $admin = false;
-    $currentPage = $currentPage ?? 1;
-    $totalPages = $totalPages ?? 1;
-    $baseUrl = 'index.php';
-    include __DIR__ . '/houses_component.php';
-    ?>
+    <div id="listing-root">
+        <?php
+        // Render filter, tiles and pagination via reusable component
+        $showFilter = true;
+        $admin = false;
+        $currentPage = $currentPage ?? 1;
+        $totalPages = $totalPages ?? 1;
+        $baseUrl = 'index.php';
+        include __DIR__ . '/houses_component.php';
+        ?>
+    </div>
     <script src="carousel.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const firstCard = document.querySelector('[data-bouncy-card="true"]');
-            if (!firstCard) {
+        function bindListingAjax() {
+            const root = document.getElementById('listing-root');
+            if (!root) {
                 return;
             }
 
-            let x = 0;
-            let y = 0;
-            let vx = 0;
-            let vy = 0;
-            let animationFrame = null;
-            let isAnimated = false;
-
-            function randomBetween(min, max) {
-                return Math.random() * (max - min) + min;
+            const form = root.querySelector('.filter-panel form');
+            if (form) {
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    const params = new URLSearchParams(new FormData(form));
+                    params.set('ajax', '1');
+                    const requestUrl = new URL(window.location.href);
+                    requestUrl.search = params.toString();
+                    fetch(requestUrl.toString(), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(function (response) { return response.text(); })
+                    .then(function (html) {
+                        root.innerHTML = html;
+                        bindListingAjax();
+                    })
+                    .catch(function () {
+                        window.location.href = form.action + '?' + params.toString();
+                    });
+                });
             }
 
-            function startBounce() {
-                if (isAnimated) {
-                    return;
-                }
-
-                isAnimated = true;
-                firstCard.classList.add('is-floating');
-
-                const rect = firstCard.getBoundingClientRect();
-                x = Math.max(16, Math.min(window.innerWidth - rect.width - 16, rect.left));
-                y = Math.max(16, Math.min(window.innerHeight - rect.height - 16, rect.top));
-                firstCard.style.left = x + 'px';
-                firstCard.style.top = y + 'px';
-                firstCard.style.width = rect.width + 'px';
-                firstCard.style.height = rect.height + 'px';
-
-                vx = randomBetween(2, 4) * (Math.random() > 0.5 ? 1 : -1);
-                vy = randomBetween(2, 4) * (Math.random() > 0.5 ? 1 : -1);
-
-                function tick() {
-                    x += vx;
-                    y += vy;
-
-                    const maxLeft = 16;
-                    const maxTop = 16;
-                    const maxRight = window.innerWidth - firstCard.offsetWidth - 16;
-                    const maxBottom = window.innerHeight - firstCard.offsetHeight - 16;
-
-                    if (x <= maxLeft || x >= maxRight) {
-                        vx *= -1;
-                        x = Math.min(Math.max(x, maxLeft), maxRight);
-                    }
-
-                    if (y <= maxTop || y >= maxBottom) {
-                        vy *= -1;
-                        y = Math.min(Math.max(y, maxTop), maxBottom);
-                    }
-
-                    firstCard.style.left = x + 'px';
-                    firstCard.style.top = y + 'px';
-                    animationFrame = window.requestAnimationFrame(tick);
-                }
-
-                if (animationFrame) {
-                    window.cancelAnimationFrame(animationFrame);
-                }
-
-                animationFrame = window.requestAnimationFrame(tick);
-            }
-
-            firstCard.addEventListener('click', function () {
+            root.querySelectorAll('.page-link').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const requestUrl = new URL(link.href);
+                    requestUrl.searchParams.set('ajax', '1');
+                    fetch(requestUrl.toString(), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(function (response) { return response.text(); })
+                    .then(function (html) {
+                        root.innerHTML = html;
+                        bindListingAjax();
+                    })
+                    .catch(function () {
+                        window.location.href = link.href;
+                    });
+                });
             });
+        }
 
-            window.addEventListener('resize', function () {
-                const rect = firstCard.getBoundingClientRect();
-                const maxLeft = 16;
-                const maxTop = 16;
-                const maxRight = window.innerWidth - rect.width - 16;
-                const maxBottom = window.innerHeight - rect.height - 16;
-
-                x = Math.min(Math.max(x, maxLeft), maxRight);
-                y = Math.min(Math.max(y, maxTop), maxBottom);
-                firstCard.style.left = x + 'px';
-                firstCard.style.top = y + 'px';
-            });
+        document.addEventListener('DOMContentLoaded', function () {
+            bindListingAjax();
         });
     </script>
 </body>

@@ -3,6 +3,105 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 
+if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    $googleMapsApiKey = defined('GOOGLE_MAPS_API_KEY') ? GOOGLE_MAPS_API_KEY : '';
+    $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
+    $maxPrice = isset($_GET['max_price']) && $_GET['max_price'] !== '' ? intval($_GET['max_price']) : null;
+    $status = isset($_GET['status']) && $_GET['status'] !== '' ? $_GET['status'] : null;
+
+    if ($minPrice === 0 && $maxPrice === 0) {
+        $minPrice = null;
+        $maxPrice = null;
+    }
+    if ($minPrice === null && $maxPrice === 0) {
+        $maxPrice = null;
+    }
+
+    $where = [];
+    $params = [];
+
+    if ($minPrice !== null) {
+        $where[] = 'h.price >= :min_price';
+        $params[':min_price'] = $minPrice;
+    }
+
+    if ($maxPrice !== null) {
+        $where[] = 'h.price <= :max_price';
+        $params[':max_price'] = $maxPrice;
+    }
+
+    if ($status !== null) {
+        $where[] = 'h.status = :status';
+        $params[':status'] = $status;
+    }
+
+    $where[] = "h.status != 'Nieaktywne'";
+    $where[] = 'h.latitude IS NOT NULL AND h.longitude IS NOT NULL';
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+    $houses = [];
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT h.id, h.title, h.description, h.price, h.location, h.status,
+                    h.latitude, h.longitude,
+                    COALESCE(hi.url, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1000&q=80') AS image_url
+             FROM houses h
+             LEFT JOIN house_images hi ON hi.house_id = h.id AND hi.is_primary = 1
+             $whereSql
+             ORDER BY h.created_at DESC"
+        );
+
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($key, $value, $type);
+        }
+
+        $stmt->execute();
+        $houses = $stmt->fetchAll();
+    } catch (Exception $e) {
+        error_log('domy-na-mapie.php query error: ' . $e->getMessage());
+        $houses = [];
+    }
+
+    $housesJson = json_encode(array_map(function ($house) {
+        return [
+            'id' => (int)$house['id'],
+            'title' => (string)$house['title'],
+            'description' => (string)($house['description'] ?? ''),
+            'location' => (string)($house['location'] ?? ''),
+            'price' => (float)$house['price'],
+            'status' => (string)($house['status'] ?? ''),
+            'latitude' => (float)$house['latitude'],
+            'longitude' => (float)$house['longitude'],
+            'image_url' => (string)($house['image_url'] ?? ''),
+        ];
+    }, $houses), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+    header('X-Map-Houses: ' . base64_encode($housesJson));
+
+    $formContent = '<div class="map-filter">';
+    $formContent .= '<h2>Domy na Mapie</h2>';
+    $formContent .= '<form method="get" action="domy-na-mapie.php">';
+    $formContent .= '<div class="filter-row">';
+    $formContent .= '<label>Min cena:<input type="number" name="min_price" min="0" step="any" value="' . htmlspecialchars((string)($minPrice ?? ''), ENT_QUOTES, 'UTF-8') . '" placeholder="0"></label>';
+    $formContent .= '<label>Max cena:<input type="number" name="max_price" min="0" step="any" value="' . htmlspecialchars((string)($maxPrice ?? ''), ENT_QUOTES, 'UTF-8') . '" placeholder="0"></label>';
+    $formContent .= '<label>Status:<select name="status"><option value="">Wszystkie</option>';
+    foreach (statusOptions(false) as $statusOption) {
+        $selected = $status === $statusOption ? 'selected' : '';
+        $formContent .= '<option value="' . htmlspecialchars($statusOption, ENT_QUOTES, 'UTF-8') . '" ' . $selected . '>';
+        $formContent .= htmlspecialchars($statusOption, ENT_QUOTES, 'UTF-8');
+        $formContent .= '</option>';
+    }
+    $formContent .= '</select></label>';
+    $formContent .= '<div><button type="submit">Pokaż</button><a class="button-link" href="domy-na-mapie.php">Resetuj filtry</a></div>';
+    $formContent .= '</div></form>';
+    $formContent .= '<p class="map-status">Liczba aktywnych punktów na mapie: ' . count($houses) . '</p>';
+    $formContent .= '</div>';
+    $formContent .= '<div id="map" aria-label="Mapa z domami"></div>';
+
+    echo $formContent;
+    exit;
+}
+
 $googleMapsApiKey = defined('GOOGLE_MAPS_API_KEY') ? GOOGLE_MAPS_API_KEY : '';
 
 $minPrice = isset($_GET['min_price']) && $_GET['min_price'] !== '' ? intval($_GET['min_price']) : null;
@@ -124,7 +223,7 @@ try {
         </div>
     </header>
 
-    <main class="map-page">
+    <main class="map-page" id="map-page-root">
         <section class="map-filter">
             <h2>Domy na Mapie</h2>
             <form method="get" action="domy-na-mapie.php">
@@ -175,6 +274,7 @@ try {
                 'image_url' => (string)($house['image_url'] ?? ''),
             ];
         }, $houses), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+        window.__mapHouses = houses;
 
         function escapeHtml(value) {
             return String(value)
@@ -185,13 +285,56 @@ try {
                 .replace(/'/g, '&#039;');
         }
 
+        function bindMapPageAjax() {
+            const root = document.getElementById('map-page-root');
+            if (!root) {
+                return;
+            }
+
+            const form = root.querySelector('form');
+            if (!form) {
+                return;
+            }
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                const params = new URLSearchParams(new FormData(form));
+                params.set('ajax', '1');
+                const requestUrl = new URL(window.location.href);
+                requestUrl.search = params.toString();
+
+                fetch(requestUrl.toString(), {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(function (response) {
+                    const housesHeader = response.headers.get('X-Map-Houses');
+                    const housesData = housesHeader ? JSON.parse(atob(housesHeader)) : [];
+                    return response.text().then(function (html) {
+                        return { html: html, housesData: housesData };
+                    });
+                })
+                .then(function (result) {
+                    root.innerHTML = result.html;
+                    window.__mapHouses = result.housesData;
+                    bindMapPageAjax();
+                    initMap();
+                })
+                .catch(function () {
+                    window.location.href = form.action + '?' + params.toString();
+                });
+            });
+        }
+
         function initMap() {
             const mapElement = document.getElementById('map');
             if (!mapElement) {
                 return;
             }
 
-            const validHouses = houses.filter(function (house) {
+            const sourceHouses = window.__mapHouses || houses;
+            const validHouses = sourceHouses.filter(function (house) {
                 return Number.isFinite(house.latitude) && Number.isFinite(house.longitude);
             });
 
@@ -268,19 +411,30 @@ try {
             }
         }
 
-        const GOOGLE_MAPS_KEY_IS_PLACEHOLDER = !GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('YOUR_GOOGLE_MAPS_API_KEY');
+        document.addEventListener('DOMContentLoaded', function () {
+            bindMapPageAjax();
 
-        if (GOOGLE_MAPS_KEY_IS_PLACEHOLDER) {
-            document.getElementById('map').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:24px;color:#a03a2b;font-weight:600;text-align:center;">Ustaw poprawny klucz Google Maps API w zmiennej GOOGLE_MAPS_API_KEY na tej stronie.</div>';
-        } else if (typeof google !== 'undefined' && google.maps) {
-            initMap();
-        } else {
+            const GOOGLE_MAPS_KEY_IS_PLACEHOLDER = !GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('YOUR_GOOGLE_MAPS_API_KEY');
+
+            if (GOOGLE_MAPS_KEY_IS_PLACEHOLDER) {
+                const map = document.getElementById('map');
+                if (map) {
+                    map.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:24px;color:#a03a2b;font-weight:600;text-align:center;">Ustaw poprawny klucz Google Maps API w zmiennej GOOGLE_MAPS_API_KEY na tej stronie.</div>';
+                }
+                return;
+            }
+
+            if (typeof google !== 'undefined' && google.maps) {
+                initMap();
+                return;
+            }
+
             const script = document.createElement('script');
             script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(GOOGLE_MAPS_API_KEY) + '&callback=initMap';
             script.async = true;
             script.defer = true;
             document.head.appendChild(script);
-        }
+        });
     </script>
 </body>
 </html>
