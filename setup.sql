@@ -133,6 +133,40 @@ SELECT id, 'https://images.unsplash.com/photo-1499955085172-a104c9463ece?auto=fo
 INSERT INTO house_images (house_id, url, is_primary)
 SELECT id, 'https://images.unsplash.com/photo-1505693416388-2b2b2b2b2b2b?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Dom rodzinny' LIMIT 1;
 
+INSERT INTO houses (title, description, price, location, area, status, PowierzchniaUżytkowa, PowierzchniaDziałki, LiczbaPokoi, CenaOdPowierzchniUżytkowejBrutto, CenaZaM2Brutto)
+VALUES
+('Dom przy lesie', 'Spokojny dom z dużym ogrodem i widokiem na las. Idealny na spokojne życie rodzinne.', 760000.00, 'Lokalizacja do uzupełnienia', 170, 'Dostępne', 140.00, 650.00, 4, 760000.00, 5428.57),
+('Nowoczesna willa na obrzeżach', 'Nowoczesny projekt z dużymi przeszkleniami i tarasem na świeżym powietrzu.', 1840000.00, 'Lokalizacja do uzupełnienia', 310, 'Dostępne', 264.00, 1100.00, 5, 1840000.00, 6969.70),
+('Domek pod wzgórzem', 'Przytulny domek z ogrodem i miejscem na grill, dobrze skomunikowany z miastem.', 510000.00, 'Lokalizacja do uzupełnienia', 120, 'Dostępne', 96.00, 420.00, 3, 510000.00, 5312.50),
+('Rodzinny dom z podjazdem', 'Przestronny dom z wygodnym podjazdem oraz dużym podwórkiem dla dzieci.', 920000.00, 'Lokalizacja do uzupełnienia', 210, 'Rezerwacja', 178.00, 780.00, 5, 920000.00, 5168.54),
+('Niewielka rezydencja', 'Elegancka nieruchomość z tarasem, salonem i ogrodem przy domu.', 1650000.00, 'Lokalizacja do uzupełnienia', 290, 'Dostępne', 240.00, 980.00, 6, 1650000.00, 6875.00),
+('Dom z tarasem', 'Dom z przyjaznym tarasem, dużą kuchnią i miejscem do wypoczynku na zewnątrz.', 840000.00, 'Lokalizacja do uzupełnienia', 180, 'Dostępne', 152.00, 600.00, 4, 840000.00, 5526.32),
+('Apartament z balkonem', 'Komfortowy apartament z balkonem, świetny na inwestycję lub mieszkanie dla pary.', 430000.00, 'Lokalizacja do uzupełnienia', 75, 'Dostępne', 64.00, 150.00, 2, 430000.00, 6718.75),
+('Zadaszona willa', 'Willa z zadaszonym tarasem i miejscem na wypoczynek w każdych warunkach pogodowych.', 2080000.00, 'Lokalizacja do uzupełnienia', 340, 'Dostępne', 290.00, 1200.00, 7, 2080000.00, 7172.41),
+('Dom z ogrodem warzywnym', 'Dom w spokojnej okolicy z ogrodem i miejscem na sad oraz warzywnik.', 610000.00, 'Lokalizacja do uzupełnienia', 140, 'Dostępne', 118.00, 480.00, 3, 610000.00, 5169.49),
+('Nowoczesny dom w nowej części miasta', 'Nowy dom z rozkładowym układem pomieszczeń i dużymi oknami.', 990000.00, 'Lokalizacja do uzupełnienia', 220, 'Nieaktywne', 185.00, 720.00, 5, 990000.00, 5351.35);
+
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Dom przy lesie' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Nowoczesna willa na obrzeżach' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Domek pod wzgórzem' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Rodzinny dom z podjazdem' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1475855581690-80accde3ae59?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Niewielka rezydencja' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1505692794403-76f9b6d3d8c3?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Dom z tarasem' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1505693416388-9f1b6f9f1f1a?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Apartament z balkonem' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1499951360447-b19be8fe80f5?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Zadaszona willa' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Dom z ogrodem warzywnym' LIMIT 1;
+INSERT INTO house_images (house_id, url, is_primary)
+SELECT id, 'https://images.unsplash.com/photo-1449844882338-4b6f7b7b3b3c?auto=format&fit=crop&w=1000&q=80', 1 FROM houses WHERE title = 'Nowoczesny dom w nowej części miasta' LIMIT 1;
+
 INSERT INTO carousel_images (image_url, caption, position)
 VALUES
 ('https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80', 'Ekskluzywne wnętrza dla rodzin', 1),

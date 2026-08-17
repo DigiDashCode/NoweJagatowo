@@ -10,6 +10,9 @@ if (!isset($currentPage)) $currentPage = 1;
 if (!isset($totalPages)) $totalPages = 1;
 if (!isset($baseUrl)) $baseUrl = basename(__FILE__);
 
+$showTopPagination = $totalPages > 1;
+$showBottomPagination = $totalPages > 1;
+
 ?>
 <section class="filter-panel" <?php if (!$showFilter) echo 'style="display:none;"'; ?>>
 <?php if ($showFilter): ?>
@@ -53,6 +56,25 @@ if (!isset($baseUrl)) $baseUrl = basename(__FILE__);
 </section>
 
 <section id="results">
+    <?php if ($showTopPagination): ?>
+        <div class="pagination-wrapper pagination-wrapper-top">
+            <nav class="pagination" aria-label="Stronicowanie wyników">
+                <?php
+                $queryBase = [];
+                if (isset($minPrice) && $minPrice !== null && $minPrice !== '') $queryBase['min_price'] = $minPrice;
+                if (isset($maxPrice) && $maxPrice !== null && $maxPrice !== '') $queryBase['max_price'] = $maxPrice;
+                if (isset($status) && $status !== null && $status !== '') $queryBase['status'] = $status;
+                for ($i = 1; $i <= $totalPages; $i++):
+                    $query = $queryBase;
+                    $query['page'] = $i;
+                    $url = $baseUrl . '?' . http_build_query($query);
+                ?>
+                    <a class="page-link<?php echo $i === $currentPage ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($url, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $i; ?></a>
+                <?php endfor; ?>
+            </nav>
+        </div>
+    <?php endif; ?>
+
     <div class="row g-4">
         <?php if (empty($houses)): ?>
             <p>Brak domów w podanym przedziale cenowym.</p>
@@ -89,19 +111,21 @@ if (!isset($baseUrl)) $baseUrl = basename(__FILE__);
     </div>
 </section>
 
-<?php if ($totalPages > 1): ?>
-    <nav class="pagination">
-        <?php
-        $queryBase = [];
-        if (isset($minPrice) && $minPrice !== null && $minPrice !== '') $queryBase['min_price'] = $minPrice;
-        if (isset($maxPrice) && $maxPrice !== null && $maxPrice !== '') $queryBase['max_price'] = $maxPrice;
-        if (isset($status) && $status !== null && $status !== '') $queryBase['status'] = $status;
-        for ($i = 1; $i <= $totalPages; $i++):
-            $query = $queryBase;
-            $query['page'] = $i;
-            $url = $baseUrl . '?' . http_build_query($query);
-        ?>
-            <a class="page-link<?php echo $i === $currentPage ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($url, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $i; ?></a>
-        <?php endfor; ?>
-    </nav>
+<?php if ($showBottomPagination): ?>
+    <div class="pagination-wrapper">
+        <nav class="pagination" aria-label="Stronicowanie wyników">
+            <?php
+            $queryBase = [];
+            if (isset($minPrice) && $minPrice !== null && $minPrice !== '') $queryBase['min_price'] = $minPrice;
+            if (isset($maxPrice) && $maxPrice !== null && $maxPrice !== '') $queryBase['max_price'] = $maxPrice;
+            if (isset($status) && $status !== null && $status !== '') $queryBase['status'] = $status;
+            for ($i = 1; $i <= $totalPages; $i++):
+                $query = $queryBase;
+                $query['page'] = $i;
+                $url = $baseUrl . '?' . http_build_query($query);
+            ?>
+                <a class="page-link<?php echo $i === $currentPage ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($url, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $i; ?></a>
+            <?php endfor; ?>
+        </nav>
+    </div>
 <?php endif; ?>

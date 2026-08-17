@@ -11,8 +11,82 @@ $messageType = 'success';
 $editingHouse = null;
 $editingImages = [];
 
+if (isset($_SESSION['admin_message'])) {
+    $message = $_SESSION['admin_message'];
+    $messageType = $_SESSION['admin_message_type'] ?? 'success';
+    unset($_SESSION['admin_message'], $_SESSION['admin_message_type']);
+}
+
 function is_admin_authenticated() {
     return isset($_SESSION['admin_authenticated']) && $_SESSION['admin_authenticated'] === true && time() < ($_SESSION['admin_expires'] ?? 0);
+}
+
+function normalizeImagePathFromUrl($url) {
+    if ($url === '') {
+        return '';
+    }
+
+    $cleanUrl = trim($url);
+    if (strpos($cleanUrl, 'http://') === 0 || strpos($cleanUrl, 'https://') === 0) {
+        return '';
+    }
+
+    return __DIR__ . '/' . ltrim($cleanUrl, '/');
+}
+
+function deleteUploadedImageFile($url) {
+    $filePath = normalizeImagePathFromUrl($url);
+    if ($filePath !== '' && file_exists($filePath)) {
+        @unlink($filePath);
+    }
+}
+
+function saveUploadedHouseImage() {
+    if (!isset($_FILES['primary_image_file']) || !is_array($_FILES['primary_image_file'])) {
+        return null;
+    }
+
+    $file = $_FILES['primary_image_file'];
+    if ($file['error'] === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('Błąd przesyłania pliku zdjęcia.');
+    }
+
+    if (!is_uploaded_file($file['tmp_name'])) {
+        throw new RuntimeException('Nieprawidłowy plik zdjęcia.');
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (strpos($mimeType, 'image/') !== 0) {
+        throw new RuntimeException('Plik musi być obrazem.');
+    }
+
+    if ($file['size'] <= 0 || $file['size'] > 5 * 1024 * 1024) {
+        throw new RuntimeException('Plik zdjęcia musi mieć rozmiar do 5 MB.');
+    }
+
+    $uploadDir = __DIR__ . '/uploads/houses';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '-', basename($file['name']));
+    if ($safeName === '' || $safeName === '.') {
+        $safeName = 'house-image-' . time() . '.jpg';
+    }
+
+    $destination = $uploadDir . '/' . time() . '-' . $safeName;
+    if (!move_uploaded_file($file['tmp_name'], $destination)) {
+        throw new RuntimeException('Nie udało się zapisać zdjęcia na serwerze.');
+    }
+
+    return 'uploads/houses/' . basename($destination);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -71,6 +145,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
 
+                try {
+                    $uploadedImageUrl = saveUploadedHouseImage();
+                    if ($uploadedImageUrl !== null) {
+                        $primaryImage = $uploadedImageUrl;
+                    }
+                } catch (RuntimeException $e) {
+                    $messageType = 'error';
+                    $message = $e->getMessage();
+                }
+
                 if ($title === '' || $price <= 0 || $location === '' || $primaryImage === '') {
                     $messageType = 'error';
                     $message = 'Wypełnij pola: tytuł, cena, lokalizacja i główny obraz.';
@@ -84,8 +168,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt = $pdo->prepare('UPDATE houses SET title = ?, description = ?, price = ?, location = ?, area = ?, status = ?, PowierzchniaUżytkowa = ?, PowierzchniaDziałki = ?, LiczbaPokoi = ?, CenaOdPowierzchniUżytkowejBrutto = ?, CenaZaM2Brutto = ?, latitude = ?, longitude = ? WHERE id = ?');
                         $stmt->execute([$title, $description, $price, $location, $area, $status, $PowierzchniaUzytkowa, $PowierzchniaDzialki, $LiczbaPokoi, $CenaOdPowU, $CenaZaM2, $latitude, $longitude, $houseId]);
 
+                        $oldImageStmt = $pdo->prepare('SELECT url FROM house_images WHERE house_id = ? AND is_primary = 1 LIMIT 1');
+                        $oldImageStmt->execute([$houseId]);
+                        $oldPrimaryImage = $oldImageStmt->fetchColumn();
+
                         $stmt = $pdo->prepare('DELETE FROM house_images WHERE house_id = ?');
                         $stmt->execute([$houseId]);
+
+                        if ($oldPrimaryImage && $oldPrimaryImage !== $primaryImage && strpos($oldPrimaryImage, 'http://') !== 0 && strpos($oldPrimaryImage, 'https://') !== 0) {
+                            deleteUploadedImageFile($oldPrimaryImage);
+                        }
 
                         $stmt = $pdo->prepare('INSERT INTO house_images (house_id, url, is_primary) VALUES (?, ?, ?)');
                         $stmt->execute([$houseId, $primaryImage, 1]);
@@ -96,8 +188,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
 
                         $pdo->commit();
-                        $messageType = 'success';
-                        $message = 'Dom został zaktualizowany.';
+                        $_SESSION['admin_message'] = 'Dom został zaktualizowany.';
+                        $_SESSION['admin_message_type'] = 'success';
+                        header('Location: admin.php');
+                        exit;
                     } catch (Exception $e) {
                         $pdo->rollBack();
                         error_log('admin.php update error: ' . $e->getMessage());
@@ -116,6 +210,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? (float)$_POST['longitude'] : null;
                 $primaryImage = trim($_POST['primary_image_url'] ?? '');
                 $imageUrls = array_filter(array_map('trim', explode(',', $_POST['image_urls'] ?? '')));
+
+                try {
+                    $uploadedImageUrl = saveUploadedHouseImage();
+                    if ($uploadedImageUrl !== null) {
+                        $primaryImage = $uploadedImageUrl;
+                    }
+                } catch (RuntimeException $e) {
+                    $messageType = 'error';
+                    $message = $e->getMessage();
+                }
 
                 $allowed = statusOptions(true);
                 if (!in_array($status, $allowed, true)) $status = 'Dostępne';
@@ -140,9 +244,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
 
                         $pdo->commit();
-                        $messageType = 'success';
-                        $message = 'Dom został dodany pomyślnie.';
-                        $_POST = [];
+                        $_SESSION['admin_message'] = 'Dom został dodany pomyślnie.';
+                        $_SESSION['admin_message_type'] = 'success';
+                        header('Location: admin.php');
+                        exit;
                     } catch (Exception $e) {
                         $pdo->rollBack();
                         error_log('admin.php insert error: ' . $e->getMessage());
@@ -290,53 +395,78 @@ function editImages() {
                 <button type="submit">Zaloguj</button>
             </form>
         <?php else: ?>
-            <form method="post">
-                <input type="hidden" name="action" value="<?php echo $editingHouse ? 'update' : 'create'; ?>">
-                <?php if ($editingHouse): ?>
-                    <input type="hidden" name="house_id" value="<?php echo $editingHouse['id']; ?>">
-                <?php endif; ?>
-                <label>Tytuł:<input type="text" name="title" value="<?php echo editValue('title'); ?>" required oninvalid="this.setCustomValidity('Podaj tytuł')" oninput="this.setCustomValidity('')"></label>
-                <label>Opis:<textarea name="description"><?php echo editValue('description'); ?></textarea></label>
-                <label>Cena:<input type="number" name="price" min="0" step="0.01" value="<?php echo editValue('price'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawną cenę (liczba nieujemna)')" oninput="this.setCustomValidity('')"></label>
-                <label>Status:
-                    <select name="status" required>
-                        <?php foreach (statusOptions(true) as $st):
-                            $sel = '';
-                            if ($editingHouse && isset($editingHouse['status']) && $editingHouse['status'] === $st) {
-                                $sel = 'selected';
-                            } elseif (!$editingHouse && $st === 'Dostępne') {
-                                $sel = 'selected';
-                            }
-                        ?>
-                            <option value="<?php echo htmlspecialchars($st); ?>" <?php echo $sel; ?>><?php echo htmlspecialchars($st); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
-                <label>Szerokość geograficzna (latitude):<input type="number" name="latitude" step="any" value="<?php echo editValue('latitude', ''); ?>" placeholder="np. 54.352025"></label>
-                <label>Długość geograficzna (longitude):<input type="number" name="longitude" step="any" value="<?php echo editValue('longitude', ''); ?>" placeholder="np. 18.646638"></label>
+            <?php $editorOpen = $editingHouse !== null; ?>
+            <div class="admin-editor-tile <?php echo $editorOpen ? 'is-open' : 'is-collapsed'; ?>" data-admin-editor-tile>
+                <button type="button" class="admin-toggle-button" data-admin-toggle>
+                    <span class="admin-toggle-label"><?php echo $editingHouse ? 'Edytuj dom' : 'Dodaj nowy dom'; ?></span>
+                    <span class="admin-toggle-icon" aria-hidden="true">▾</span>
+                </button>
 
-                <div class="map-editor">
-                    <div class="map-editor-header">
-                        <strong>Wskaż lokalizację na mapie</strong>
-                    </div>
-                    <div id="adminMap" class="map-editor-map" aria-label="Mapa do ustawiania współrzędnych"></div>
-                    <p class="map-editor-note">Kliknij na mapie, aby ustawić współrzędne albo wpisz je ręcznie powyżej. Wystarczy podać poprawny klucz Google Maps API w skrypcie.</p>
+                <div class="admin-editor-content">
+                    <form method="post" enctype="multipart/form-data">
+                        <input type="hidden" name="action" value="<?php echo $editingHouse ? 'update' : 'create'; ?>">
+                        <?php if ($editingHouse): ?>
+                            <input type="hidden" name="house_id" value="<?php echo $editingHouse['id']; ?>">
+                        <?php endif; ?>
+                        <label>Tytuł:<input type="text" name="title" value="<?php echo editValue('title'); ?>" required oninvalid="this.setCustomValidity('Podaj tytuł')" oninput="this.setCustomValidity('')"></label>
+                        <label>Opis:<textarea name="description"><?php echo editValue('description'); ?></textarea></label>
+                        <label>Cena:<input type="number" name="price" min="0" step="0.01" value="<?php echo editValue('price'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawną cenę (liczba nieujemna)')" oninput="this.setCustomValidity('')"></label>
+                        <label>Status:
+                            <select name="status" required>
+                                <?php foreach (statusOptions(true) as $st):
+                                    $sel = '';
+                                    if ($editingHouse && isset($editingHouse['status']) && $editingHouse['status'] === $st) {
+                                        $sel = 'selected';
+                                    } elseif (!$editingHouse && $st === 'Dostępne') {
+                                        $sel = 'selected';
+                                    }
+                                ?>
+                                    <option value="<?php echo htmlspecialchars($st); ?>" <?php echo $sel; ?>><?php echo htmlspecialchars($st); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Lokalizacja:<input type="text" name="location" value="<?php echo editValue('location'); ?>" required oninvalid="this.setCustomValidity('Podaj lokalizację')" oninput="this.setCustomValidity('')"></label>
+                        <label>Szerokość geograficzna (latitude):<input type="number" name="latitude" step="any" value="<?php echo editValue('latitude', ''); ?>" placeholder="np. 54.352025"></label>
+                        <label>Długość geograficzna (longitude):<input type="number" name="longitude" step="any" value="<?php echo editValue('longitude', ''); ?>" placeholder="np. 18.646638"></label>
+
+                        <div class="map-editor">
+                            <div class="map-editor-header">
+                                <strong>Wskaż lokalizację na mapie</strong>
+                            </div>
+                            <div id="adminMap" class="map-editor-map" aria-label="Mapa do ustawiania współrzędnych"></div>
+                            <p class="map-editor-note">Kliknij na mapie, aby ustawić współrzędne albo wpisz je ręcznie powyżej. Wystarczy podać poprawny klucz Google Maps API w skrypcie.</p>
+                        </div>
+                        <!-- bedrooms and bathrooms removed as requested -->
+                        <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawny metraż (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
+                        <label>Pow. użytkowa (m2):<input type="text" name="PowierzchniaUżytkowa" value="<?php echo editValue('PowierzchniaUżytkowa', '0'); ?>"></label>
+                        <label>Pow. działki (m2):<input type="text" name="PowierzchniaDziałki" value="<?php echo editValue('PowierzchniaDziałki', '0'); ?>"></label>
+                        <label>Liczba pokoi:<input type="number" name="LiczbaPokoi" min="0" value="<?php echo editValue('LiczbaPokoi', '0'); ?>"></label>
+                        <label>Cena od pow. użytk. (brutto):<input type="text" name="CenaOdPowierzchniUżytkowejBrutto" value="<?php echo editValue('CenaOdPowierzchniUżytkowejBrutto', '0'); ?>"></label>
+                        <label>Cena za m2 (brutto):<input type="text" name="CenaZaM2Brutto" value="<?php echo editValue('CenaZaM2Brutto', '0'); ?>"></label>
+                        <label>Główny obraz (URL lub plik):
+                            <input type="url" name="primary_image_url" value="<?php echo editValue('primary_image_url'); ?>" placeholder="https://... albo zostaw puste, jeśli wrzucasz plik poniżej" oninvalid="this.setCustomValidity('Podaj poprawny adres URL obrazu, jeśli używasz URL')" oninput="this.setCustomValidity('')">
+                        </label>
+                        <label>Wgraj główny obraz z komputera:
+                            <input type="file" name="primary_image_file" accept="image/*">
+                        </label>
+                        <div id="selected-image-preview" style="display:none; margin-top:10px;">
+                            <strong>Podgląd wybranego zdjęcia:</strong><br>
+                            <img id="selected-image-preview-img" src="" alt="Podgląd wybranego zdjęcia" style="max-width:220px;max-height:140px;object-fit:cover;border-radius:10px;margin-top:8px;">
+                        </div>
+                        <?php if ($editingHouse && !empty($editingHouse['primary_image_url'])): ?>
+                            <div class="current-image-preview" style="margin-top:12px;">
+                                <strong>Aktualne zdjęcie:</strong><br>
+                                <img src="<?php echo htmlspecialchars($editingHouse['primary_image_url'], ENT_QUOTES, 'UTF-8'); ?>" alt="Aktualne zdjęcie domu" style="max-width:220px;max-height:140px;object-fit:cover;border-radius:10px;margin-top:8px;">
+                            </div>
+                        <?php endif; ?>
+                        <label>Dodatkowe obrazy (URL, oddzielone przecinkami):<textarea name="image_urls"><?php echo $editingHouse ? editImages() : old('image_urls'); ?></textarea></label>
+                        <button type="submit"><?php echo $editingHouse ? 'Zaktualizuj dom' : 'Dodaj dom'; ?></button>
+                        <?php if ($editingHouse): ?>
+                            <a class="button-link" href="admin.php">Anuluj edycję</a>
+                        <?php endif; ?>
+                    </form>
                 </div>
-                <!-- bedrooms and bathrooms removed as requested -->
-                <label>Powierzchnia (m2):<input type="number" name="area" min="0" value="<?php echo editValue('area', '0'); ?>" oninvalid="this.setCustomValidity('Podaj poprawny metraż (0 lub więcej)')" oninput="this.setCustomValidity('')"></label>
-                <label>Pow. użytkowa (m2):<input type="text" name="PowierzchniaUżytkowa" value="<?php echo editValue('PowierzchniaUżytkowa', '0'); ?>"></label>
-                <label>Pow. działki (m2):<input type="text" name="PowierzchniaDziałki" value="<?php echo editValue('PowierzchniaDziałki', '0'); ?>"></label>
-                <label>Liczba pokoi:<input type="number" name="LiczbaPokoi" min="0" value="<?php echo editValue('LiczbaPokoi', '0'); ?>"></label>
-                <label>Cena od pow. użytk. (brutto):<input type="text" name="CenaOdPowierzchniUżytkowejBrutto" value="<?php echo editValue('CenaOdPowierzchniUżytkowejBrutto', '0'); ?>"></label>
-                <label>Cena za m2 (brutto):<input type="text" name="CenaZaM2Brutto" value="<?php echo editValue('CenaZaM2Brutto', '0'); ?>"></label>
-                <label>Główny obraz (URL):<input type="url" name="primary_image_url" value="<?php echo editValue('primary_image_url'); ?>" required oninvalid="this.setCustomValidity('Podaj poprawny adres URL obrazu')" oninput="this.setCustomValidity('')"></label>
-                <label>Dodatkowe obrazy (URL, oddzielone przecinkami):<textarea name="image_urls"><?php echo $editingHouse ? editImages() : old('image_urls'); ?></textarea></label>
-                <button type="submit"><?php echo $editingHouse ? 'Zaktualizuj dom' : 'Dodaj dom'; ?></button>
-                <?php if ($editingHouse): ?>
-                    <a class="button-link" href="admin.php">Anuluj edycję</a>
-                <?php endif; ?>
-            </form>
+            </div>
 
             <?php
                 // Render the shared houses component for admin (show filters)
@@ -363,9 +493,58 @@ function editImages() {
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const editorTile = document.querySelector('[data-admin-editor-tile]');
+            const editorToggleButton = document.querySelector('[data-admin-toggle]');
+
+            if (editorTile && editorToggleButton) {
+                const applyEditorState = function (isOpen) {
+                    editorTile.classList.toggle('is-open', isOpen);
+                    editorTile.classList.toggle('is-collapsed', !isOpen);
+                    editorToggleButton.textContent = isOpen ? 'Zamknij formularz' : 'Dodaj nowy dom';
+                };
+
+                editorToggleButton.addEventListener('click', function () {
+                    const isOpen = !editorTile.classList.contains('is-open');
+                    applyEditorState(isOpen);
+                });
+
+                if (editorTile.classList.contains('is-open')) {
+                    applyEditorState(true);
+                } else {
+                    applyEditorState(false);
+                }
+            }
+
             const latInput = document.querySelector('input[name="latitude"]');
             const lngInput = document.querySelector('input[name="longitude"]');
             const mapElement = document.getElementById('adminMap');
+            const uploadInput = document.querySelector('input[name="primary_image_file"]');
+            const uploadPreview = document.getElementById('selected-image-preview');
+            const uploadPreviewImg = document.getElementById('selected-image-preview-img');
+
+            if (uploadInput && uploadPreview && uploadPreviewImg) {
+                uploadInput.addEventListener('change', function () {
+                    const file = this.files && this.files[0];
+                    if (!file) {
+                        uploadPreview.style.display = 'none';
+                        uploadPreviewImg.src = '';
+                        return;
+                    }
+
+                    if (!file.type.startsWith('image/')) {
+                        uploadPreview.style.display = 'none';
+                        uploadPreviewImg.src = '';
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        uploadPreviewImg.src = event.target.result;
+                        uploadPreview.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
 
             if (!latInput || !lngInput || !mapElement) {
                 return;
